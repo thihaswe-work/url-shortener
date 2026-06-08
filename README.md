@@ -4,11 +4,13 @@ A production-ready URL shortener built with **FastAPI** — shorten URLs, track 
 
 ## Features
 
-- **Shorten URLs** — auto-generated 7-char codes or custom aliases
-- **Expiration** — optional expiry date per short URL
+- **Web UI** — user-friendly interface at `http://localhost:8000` (register, login, shorten URLs, view stats, manage API keys)
+- **Shorten URLs** — auto-generated 7-char codes or custom aliases (4-32 chars)
+- **Expiration** — optional expiry date per short URL (auto-returns 410 Gone after)
 - **Redirect** — 301 redirect with Redis caching for hot-path performance
 - **Analytics** — every click tracked: timestamp, hashed IP, user-agent, referrer, device type
 - **Authentication** — JWT-based register/login/logout with bcrypt password hashing
+- **API Keys** — generate long-lived API keys for programmatic access (sent via `X-API-Key` header)
 - **Rate limiting** — per-IP-per-endpoint sliding window (30/min shorten, 20/min auth)
 - **Anonymous usage** — shorten URLs without an account
 - **OpenAPI docs** — auto-generated interactive docs at `/docs`
@@ -23,16 +25,28 @@ app/
 ├── models/              # ORM models (database tables)
 │   ├── user.py          # users: id, email, username, hashed_password
 │   ├── url.py           # urls: short_code (indexed), original_url, expires_at
-│   └── click.py         # clicks: url_id, timestamp, ip_hash, user_agent, device_type
+│   ├── click.py         # clicks: url_id, timestamp, ip_hash, user_agent, device_type
+│   └── api_key.py       # api_keys: user_id, key_hash, key_prefix, name, is_active
 ├── schemas/             # Pydantic request/response models
+│   └── api_key.py       # ApiKeyCreate, ApiKeyResponse, ApiKeyCreated, ApiKeyList
+├── templates/           # Jinja2 web UI templates
+│   ├── base.html        # Layout with Bootstrap 5, nav, auth state
+│   ├── index.html       # Landing page with quick shorten form
+│   ├── register.html    # Registration form
+│   ├── login.html       # Login form
+│   ├── dashboard.html   # URL list + create form + stats
+│   ├── api_keys.html    # API key management
+│   └── stats.html       # Click analytics per URL
 ├── api/v1/              # Route handlers
-│   ├── auth.py          # POST/register, POST/login, POST/logout, GET/me
-│   ├── urls.py          # POST/shorten, GET/stats/{short_code}
+│   ├── auth.py          # POST/register, POST/login, POST/logout, GET/me, API key CRUD
+│   ├── urls.py          # POST/shorten, GET/stats/{short_code}, GET/stats/all
+│   ├── pages.py         # Web UI page routes (/, /login, /dashboard, etc.)
 │   └── redirect.py      # GET/{short_code} → 301 redirect (Redis-cached)
 ├── services/            # Business logic layer
 │   ├── auth.py          # AuthService: register, login, token creation
 │   ├── url_shortener.py # Short code generation, collision prevention
-│   └── analytics.py     # Click tracking, IP hashing, device detection
+│   ├── analytics.py     # Click tracking, IP hashing, device detection
+│   └── api_key.py       # ApiKeyService: generate, validate, list, revoke
 ├── core/                # Infrastructure layer
 │   ├── security.py      # bcrypt hashing, JWT encode/decode
 │   └── redis.py         # Redis client with graceful degradation
@@ -91,10 +105,20 @@ This runs three containers: FastAPI (port 8000), PostgreSQL 15 (port 5432), Redi
 | POST | `/api/v1/auth/register` | No | Create a new account |
 | POST | `/api/v1/auth/login` | No | Get JWT access token |
 | POST | `/api/v1/auth/logout` | Yes | Log out |
-| GET | `/api/v1/auth/me` | Yes | Get current user info |
-| POST | `/api/v1/shorten` | Optional | Shorten a URL (works without auth) |
+| GET | `/api/v1/auth/me` | Yes | Get current user info (JWT or API Key) |
+| POST | `/api/v1/auth/api-keys` | Yes | Generate a new API key |
+| GET | `/api/v1/auth/api-keys` | Yes | List your API keys |
+| DELETE | `/api/v1/auth/api-keys/{id}` | Yes | Revoke an API key |
+| POST | `/api/v1/shorten` | Optional | Shorten a URL (JWT or API Key) |
+| GET | `/api/v1/stats/all` | Yes | List all your URLs with stats |
 | GET | `/api/v1/stats/{short_code}` | Yes | Get click analytics (owner only) |
 | GET | `/{short_code}` | No | 301 redirect to original URL |
+| GET | `/` | No | Web UI — home page |
+| GET | `/register` | No | Web UI — registration form |
+| GET | `/login` | No | Web UI — login form |
+| GET | `/dashboard` | No | Web UI — manage URLs |
+| GET | `/api-keys` | No | Web UI — manage API keys |
+| GET | `/stats/{short_code}` | No | Web UI — click analytics |
 
 ## Testing Guide
 
@@ -181,7 +205,40 @@ curl http://127.0.0.1:8000/expired
 
 Expected: **410 Gone** with `"Short URL has expired"`.
 
-### 8. Test rate limiting
+### 8. Test API keys
+
+```bash
+# Create an API key
+curl -X POST http://127.0.0.1:8000/api/v1/auth/api-keys \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{"name":"ci-key"}'
+
+# Expected: 201 with raw_key (shown once), key_prefix, id
+# Use the raw_key to authenticate without JWT:
+
+# Get user info via API key
+curl -X GET http://127.0.0.1:8000/api/v1/auth/me \
+  -H "X-API-Key: shortener_abc123..."
+
+# Shorten via API key
+curl -X POST http://127.0.0.1:8000/api/v1/shorten \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: shortener_abc123..." \
+  -d '{"original_url":"https://example.com","custom_alias":"api-test"}'
+
+# List your API keys
+curl -X GET http://127.0.0.1:8000/api/v1/auth/api-keys \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Revoke a key
+curl -X DELETE http://127.0.0.1:8000/api/v1/auth/api-keys/1 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+The API key is stored as a SHA-256 hash. The raw key (`shortener_...`) is returned only once at creation.
+
+### 9. Test rate limiting
 
 Hit `/api/v1/shorten` 31+ times in one minute. Expected: **429 Too Many Requests**.
 

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h3 class="mb-4"><i class="bi bi-speedometer2"></i> Dashboard</h3>
+
+<div class="row mb-4">
+    <div class="col-md-7">
+        <div class="card border-secondary">
+            <div class="card-header"><i class="bi bi-scissors"></i> Create Short URL</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Long URL</label>
+                    <input type="url" class="form-control" id="urlInput" placeholder="https://example.com/...">
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6 mb-2 mb-md-0">
+                        <label class="form-label">Custom alias</label>
+                        <input type="text" class="form-control" id="aliasInput" placeholder="my-link" maxlength="32">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Expires</label>
+                        <input type="datetime-local" class="form-control" id="expiryInput">
+                    </div>
+                </div>
+                <button class="btn btn-primary w-100" id="shortenBtn">
+                    <i class="bi bi-scissors"></i> Shorten
+                </button>
+                <div id="resultArea" class="result-box d-none">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="short-url-display"><a href="#" id="shortUrlLink" target="_blank"></a></div>
+                            <small class="text-secondary" id="originalUrlDisplay"></small>
+                        </div>
+                        <button class="btn btn-outline-secondary btn-sm" id="copyBtn"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card border-secondary h-100">
+            <div class="card-header"><i class="bi bi-bar-chart"></i> Total Statistics</div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <div class="text-center">
+                    <div class="click-count text-info" id="totalUrls">0</div>
+                    <div class="text-secondary">URLs Created</div>
+                    <div class="click-count text-success mt-3" id="totalClicks">0</div>
+                    <div class="text-secondary">Total Clicks</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-secondary">
+    <div class="card-header"><i class="bi bi-list-ul"></i> My URLs</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>Short URL</th>
+                        <th>Original URL</th>
+                        <th>Clicks</th>
+                        <th>Created</th>
+                        <th>Expires</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="urlsTableBody">
+                    <tr><td colspan="6" class="text-center text-secondary">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadUrls() {
+    try {
+        const data = await apiCall('GET', '/stats/all');
+        const tbody = document.getElementById('urlsTableBody');
+        const urls = data || [];
+        document.getElementById('totalUrls').textContent = urls.length;
+        let totalClicks = 0;
+        urls.forEach(u => totalClicks += u.total_clicks);
+        document.getElementById('totalClicks').textContent = totalClicks;
+
+        if (urls.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">No URLs yet. Create your first one!</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = urls.map(u => {
+            const expires = u.expires_at ? new Date(u.expires_at).toLocaleDateString() : '—';
+            return `<tr>
+                <td><a href="${u.short_url}" target="_blank" class="text-info">${u.short_code}</a></td>
+                <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${u.original_url}">${u.original_url}</td>
+                <td><span class="badge bg-info">${u.total_clicks}</span></td>
+                <td>${new Date(u.created_at).toLocaleDateString()}</td>
+                <td>${expires}</td>
+                <td><a href="/stats/${u.short_code}" class="btn btn-sm btn-outline-info"><i class="bi bi-bar-chart"></i></a></td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        document.getElementById('urlsTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-danger">Failed to load URLs</td></tr>';
+    }
+}
+
+document.getElementById('shortenBtn').addEventListener('click', async function() {
+    const btn = this;
+    const url = document.getElementById('urlInput').value.trim();
+    if (!url) { flash('Enter a URL', 'warning'); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Shortening...';
+
+    try {
+        const body = { original_url: url };
+        const alias = document.getElementById('aliasInput').value.trim();
+        const expiry = document.getElementById('expiryInput').value;
+        if (alias) body.custom_alias = alias;
+        if (expiry) body.expires_at = new Date(expiry).toISOString();
+
+        const data = await apiCall('POST', '/shorten', body);
+        const area = document.getElementById('resultArea');
+        area.classList.remove('d-none');
+        document.getElementById('shortUrlLink').href = data.short_url;
+        document.getElementById('shortUrlLink').textContent = data.short_url;
+        document.getElementById('originalUrlDisplay').textContent = data.original_url;
+        document.getElementById('urlInput').value = '';
+        document.getElementById('aliasInput').value = '';
+        document.getElementById('expiryInput').value = '';
+        loadUrls();
+    } catch (e) {
+        flash(e.message, 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-scissors"></i> Shorten';
+    }
+});
+
+document.getElementById('copyBtn')?.addEventListener('click', function() {
+    const url = document.getElementById('shortUrlLink').textContent;
+    navigator.clipboard.writeText(url).then(() => flash('Copied!', 'success'));
+});
+
+loadUrls();
+</script>
+{% endblock %}

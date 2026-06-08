@@ -19,3 +19,16 @@ class StatsResponse(BaseModel):
     original_url: str
     total_clicks: int
     recent_clicks: list[ClickResponse]
+
+
+class UserURLSummary(BaseModel):
+    short_code: str
+    original_url: str
+    short_url: str
+    total_clicks: int
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+
+
+class UserURLsResponse(BaseModel):
+    urls: list[UserURLSummary]

@@ -62,3 +62,11 @@ class URLShortenerService:
 
     def get_url_by_code(self, short_code: str) -> Optional[URL]:
         return self.db.query(URL).filter(URL.short_code == short_code).first()
+
+    def get_user_urls(self, user_id: int) -> list[URL]:
+        return (
+            self.db.query(URL)
+            .filter(URL.user_id == user_id)
+            .order_by(URL.created_at.desc())
+            .all()
+        )

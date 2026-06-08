@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}URL Shortener{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        body { padding-top: 70px; }
+        .short-url-display { font-size: 1.25rem; font-weight: 600; letter-spacing: 0.5px; }
+        .click-count { font-size: 1.5rem; font-weight: 700; }
+        .flash-message { position: fixed; top: 80px; right: 20px; z-index: 1050; min-width: 300px; }
+        .navbar-brand { font-weight: 700; letter-spacing: 1px; }
+        .hero { padding: 60px 0 40px; text-align: center; }
+        .hero h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 16px; }
+        .hero p { font-size: 1.15rem; opacity: 0.75; max-width: 600px; margin: 0 auto 32px; }
+        .result-box { background: var(--bs-dark); border: 1px solid var(--bs-border-color); border-radius: 12px; padding: 20px; margin-top: 20px; }
+        .api-key-display { font-family: monospace; background: var(--bs-dark); padding: 12px 16px; border-radius: 8px; word-break: break-all; border: 1px solid var(--bs-border-color); }
+        footer { opacity: 0.5; font-size: 0.85rem; text-align: center; padding: 30px 0; margin-top: 40px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="/"><i class="bi bi-link-45deg"></i> ShortURL</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navMenu">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item" id="navDashboard" style="display:none;"><a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                    <li class="nav-item" id="navApiKeys" style="display:none;"><a class="nav-link" href="/api-keys"><i class="bi bi-key"></i> API Keys</a></li>
+                    <li class="nav-item" id="navLogout" style="display:none;"><a class="nav-link" href="#" id="logoutBtn"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                    <li class="nav-item" id="navLogin"><a class="nav-link" href="/login"><i class="bi bi-box-arrow-in-right"></i> Login</a></li>
+                    <li class="nav-item" id="navRegister"><a class="nav-link" href="/register"><i class="bi bi-person-plus"></i> Register</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div id="flashContainer" class="flash-message"></div>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer class="container">
+        <p class="mb-0">URL Shortener &mdash; Built with FastAPI</p>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_BASE = '/api/v1';
+
+        function getToken() { return localStorage.getItem('token'); }
+        function isLoggedIn() { return !!getToken(); }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const loggedIn = isLoggedIn();
+            document.getElementById('navDashboard').style.display = loggedIn ? '' : 'none';
+            document.getElementById('navApiKeys').style.display = loggedIn ? '' : 'none';
+            document.getElementById('navLogout').style.display = loggedIn ? '' : 'none';
+            document.getElementById('navLogin').style.display = loggedIn ? 'none' : '';
+            document.getElementById('navRegister').style.display = loggedIn ? 'none' : '';
+        });
+
+        function flash(msg, type) {
+            const c = document.getElementById('flashContainer');
+            const el = document.createElement('div');
+            el.className = 'alert alert-' + type + ' alert-dismissible fade show';
+            el.innerHTML = msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+            c.appendChild(el);
+            setTimeout(() => { el.remove(); }, 5000);
+        }
+
+        async function apiCall(method, path, body) {
+            const opts = { method, headers: { 'Content-Type': 'application/json' } };
+            const token = getToken();
+            if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+            if (body) opts.body = JSON.stringify(body);
+            const res = await fetch(API_BASE + path, opts);
+            if (res.status === 204) return null;
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Request failed');
+            return data;
+        }
+
+        document.getElementById('logoutBtn')?.addEventListener('click', function(e) {
+            e.preventDefault();
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

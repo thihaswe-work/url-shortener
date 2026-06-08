@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Register{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center" style="padding-top:40px;">
+    <div class="col-md-5">
+        <div class="card border-secondary">
+            <div class="card-body p-4">
+                <h3 class="text-center mb-4"><i class="bi bi-person-plus"></i> Create Account</h3>
+                <div class="mb-3">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-control" id="emailInput" placeholder="you@example.com">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Username</label>
+                    <input type="text" class="form-control" id="usernameInput" placeholder="yourusername">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-control" id="passwordInput" placeholder="Min 6 characters">
+                </div>
+                <button class="btn btn-primary w-100" id="registerBtn">Register</button>
+                <p class="text-center mt-3 mb-0">
+                    Already have an account? <a href="/login">Login</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('registerBtn').addEventListener('click', async function() {
+    const btn = this;
+    const email = document.getElementById('emailInput').value.trim();
+    const username = document.getElementById('usernameInput').value.trim();
+    const password = document.getElementById('passwordInput').value;
+
+    if (!email || !username || !password) { flash('All fields required', 'warning'); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Registering...';
+
+    try {
+        await apiCall('POST', '/auth/register', { email, username, password });
+        const login = await apiCall('POST', '/auth/login', { username, password });
+        localStorage.setItem('token', login.access_token);
+        window.location.href = '/dashboard';
+    } catch (e) {
+        flash(e.message, 'danger');
+        btn.disabled = false;
+        btn.textContent = 'Register';
+    }
+});
+</script>
+{% endblock %}

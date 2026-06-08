@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.url import ShortenRequest, URLResponse
-from app.schemas.analytics import StatsResponse
+from app.schemas.analytics import StatsResponse, UserURLsResponse, UserURLSummary
 from app.services.url_shortener import URLShortenerService
 from app.services.analytics import AnalyticsService
 from app.api.deps import get_optional_user, get_current_user
@@ -44,6 +44,29 @@ def shorten_url(
         created_at=url.created_at,
         click_count=url.click_count or 0,
     )
+
+
+@router.get("/stats/all", response_model=UserURLsResponse)
+def get_all_user_urls(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = URLShortenerService(db)
+    urls = service.get_user_urls(current_user.id)
+    base_url = str(request.base_url).rstrip("/")
+    summaries = [
+        UserURLSummary(
+            short_code=u.short_code,
+            original_url=u.original_url,
+            short_url=f"{base_url}/{u.short_code}",
+            total_clicks=u.click_count or 0,
+            created_at=u.created_at,
+            expires_at=u.expires_at,
+        )
+        for u in urls
+    ]
+    return UserURLsResponse(urls=summaries)
 
 
 @router.get("/stats/{short_code}", response_model=StatsResponse)

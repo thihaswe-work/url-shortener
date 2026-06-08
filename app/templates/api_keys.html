@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}API Keys{% endblock %}
+
+{% block content %}
+<h3 class="mb-4"><i class="bi bi-key"></i> API Keys</h3>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-header"><i class="bi bi-plus-circle"></i> Create New Key</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Key Name</label>
+                    <input type="text" class="form-control" id="keyNameInput" placeholder="e.g. Production CI">
+                </div>
+                <button class="btn btn-primary w-100" id="createKeyBtn"><i class="bi bi-plus-lg"></i> Generate Key</button>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-header"><i class="bi bi-info-circle"></i> How API Keys Work</div>
+            <div class="card-body">
+                <p class="mb-1">Use API keys to authenticate without JWT tokens:</p>
+                <code class="api-key-display d-block">X-API-Key: shortener_abc123...</code>
+                <p class="mt-2 mb-0 text-secondary small">The full key is shown only once when created. Store it securely.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="newKeyResult" class="d-none">
+    <div class="alert alert-success">
+        <strong>Key created!</strong> Copy this key now — it won't be shown again.
+        <div class="api-key-display mt-2" id="rawKeyDisplay"></div>
+        <button class="btn btn-sm btn-outline-success mt-2" id="copyRawKeyBtn"><i class="bi bi-clipboard"></i> Copy Key</button>
+    </div>
+</div>
+
+<div class="card border-secondary">
+    <div class="card-header"><i class="bi bi-list-ul"></i> Your API Keys</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Key Prefix</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Last Used</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="keysTableBody">
+                    <tr><td colspan="6" class="text-center text-secondary">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadKeys() {
+    try {
+        const data = await apiCall('GET', '/auth/api-keys');
+        const tbody = document.getElementById('keysTableBody');
+        const keys = data.api_keys || [];
+
+        if (keys.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">No API keys yet.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = keys.map(k => {
+            const status = k.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Revoked</span>';
+            const lastUsed = k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'Never';
+            return `<tr>
+                <td>${k.name}</td>
+                <td><code>${k.key_prefix}</code></td>
+                <td>${status}</td>
+                <td>${new Date(k.created_at).toLocaleDateString()}</td>
+                <td>${lastUsed}</td>
+                <td>${k.is_active ? `<button class="btn btn-sm btn-outline-danger revoke-btn" data-id="${k.id}"><i class="bi bi-x-circle"></i> Revoke</button>` : '—'}</td>
+            </tr>`;
+        }).join('');
+
+        document.querySelectorAll('.revoke-btn').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                if (!confirm('Revoke this API key? This cannot be undone.')) return;
+                try {
+                    await apiCall('DELETE', '/auth/api-keys/' + this.dataset.id);
+                    flash('Key revoked', 'success');
+                    loadKeys();
+                } catch (e) {
+                    flash(e.message, 'danger');
+                }
+            });
+        });
+    } catch (e) {
+        document.getElementById('keysTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-danger">Failed to load keys</td></tr>';
+    }
+}
+
+document.getElementById('createKeyBtn').addEventListener('click', async function() {
+    const btn = this;
+    const name = document.getElementById('keyNameInput').value.trim();
+    if (!name) { flash('Enter a name for the key', 'warning'); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating...';
+
+    try {
+        const data = await apiCall('POST', '/auth/api-keys', { name });
+        document.getElementById('newKeyResult').classList.remove('d-none');
+        document.getElementById('rawKeyDisplay').textContent = data.raw_key;
+        document.getElementById('keyNameInput').value = '';
+        loadKeys();
+    } catch (e) {
+        flash(e.message, 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-lg"></i> Generate Key';
+    }
+});
+
+document.getElementById('copyRawKeyBtn').addEventListener('click', function() {
+    const key = document.getElementById('rawKeyDisplay').textContent;
+    navigator.clipboard.writeText(key).then(() => flash('API key copied!', 'success'));
+});
+
+loadKeys();
+</script>
+{% endblock %}
